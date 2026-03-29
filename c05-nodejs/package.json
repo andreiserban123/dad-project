@@ -1,0 +1,17 @@
+{
+  "name": "c05-nodejs",
+  "version": "1.0.0",
+  "description": "ISM C05 - REST API for picture storage and retrieval",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev":   "nodemon src/index.js"
+  },
+  "dependencies": {
+    "express":  "^4.19.2",
+    "mysql2":   "^3.9.7",
+    "mongoose": "^8.4.0",
+    "cors":     "^2.8.5",
+    "multer":   "^1.4.5-lts.1"
+  }
+}

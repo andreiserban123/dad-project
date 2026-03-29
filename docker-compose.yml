@@ -1,0 +1,153 @@
+version: '3.9'
+
+networks:
+  ism-net:
+    driver: bridge
+
+volumes:
+  mysql-data:
+  mongo-data:
+  mpi-shared:   # shared volume between c03 and c04 for BMP file passing
+
+services:
+
+  # ─────────────────────────────────────────────
+  # C01 — Spring Boot backend + static frontend
+  # ─────────────────────────────────────────────
+  c01-backend:
+    build:
+      context: ./c01-backend
+      dockerfile: Dockerfile
+    container_name: c01-backend
+    ports:
+      - "8080:8080"
+    environment:
+      RABBITMQ_HOST: c02-rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: admin
+      RABBITMQ_PASS: admin
+      C05_BASE_URL: http://c05-nodejs:3000
+    depends_on:
+      c02-rabbitmq:
+        condition: service_healthy
+    networks:
+      - ism-net
+    volumes:
+      - ./c01-frontend:/app/static   # serve frontend as static files
+
+  # ─────────────────────────────────────────────
+  # C02 — RabbitMQ broker (official image)
+  # ─────────────────────────────────────────────
+  c02-rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: c02-rabbitmq
+    ports:
+      - "5672:5672"      # AMQP
+      - "15672:15672"    # Management UI  →  http://localhost:15672
+    environment:
+      RABBITMQ_DEFAULT_USER: admin
+      RABBITMQ_DEFAULT_PASS: admin
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ism-net
+
+  # ─────────────────────────────────────────────
+  # C03 — Spring Boot MDB subscriber + MPI master
+  # ─────────────────────────────────────────────
+  c03-subscriber:
+    build:
+      context: ./c03-subscriber
+      dockerfile: Dockerfile
+    container_name: c03-subscriber
+    environment:
+      RABBITMQ_HOST: c02-rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: admin
+      RABBITMQ_PASS: admin
+      C04_HOST: c04-mpi-worker
+      C05_REST_URL: http://c05-nodejs:3000
+      MPI_HOSTS: c03-subscriber,c04-mpi-worker
+    depends_on:
+      c02-rabbitmq:
+        condition: service_healthy
+    networks:
+      - ism-net
+    volumes:
+      - mpi-shared:/mpi-work   # BMP files land here, shared with c04
+
+  # ─────────────────────────────────────────────
+  # C04 — OpenMPI + OpenMP worker node
+  # ─────────────────────────────────────────────
+  c04-mpi-worker:
+    build:
+      context: ./c04-mpi
+      dockerfile: Dockerfile
+    container_name: c04-mpi-worker
+    networks:
+      - ism-net
+    volumes:
+      - mpi-shared:/mpi-work
+
+  # ─────────────────────────────────────────────
+  # C05 — Node.js Express + REST endpoints
+  # ─────────────────────────────────────────────
+  c05-nodejs:
+    build:
+      context: ./c05-nodejs
+      dockerfile: Dockerfile
+    container_name: c05-nodejs
+    ports:
+      - "3000:3000"
+    environment:
+      MYSQL_HOST: mysql-db
+      MYSQL_PORT: 3306
+      MYSQL_USER: ismuser
+      MYSQL_PASS: ismpass
+      MYSQL_DB: ism_pictures
+      MONGO_URI: mongodb://mongo-db:27017/ism_snmp
+    depends_on:
+      - mysql-db
+      - mongo-db
+    networks:
+      - ism-net
+
+  # ─────────────────────────────────────────────
+  # MySQL — picture BLOB storage (used by C05)
+  # ─────────────────────────────────────────────
+  mysql-db:
+    image: mysql:8.3
+    container_name: mysql-db
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: ism_pictures
+      MYSQL_USER: ismuser
+      MYSQL_PASSWORD: ismpass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./shared/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ism-net
+
+  # ─────────────────────────────────────────────
+  # MongoDB — SNMP metrics (optional, used by C05)
+  # ─────────────────────────────────────────────
+  mongo-db:
+    image: mongo:7
+    container_name: mongo-db
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - ism-net

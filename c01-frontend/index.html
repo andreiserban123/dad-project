@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>ISM — AES Picture Processor</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #f4f4f5; color: #18181b; min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .card { background: #fff; border-radius: 12px; padding: 2rem; width: 480px; box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+    h1 { font-size: 1.3rem; font-weight: 600; margin-bottom: 1.5rem; }
+    label { font-size: .85rem; font-weight: 500; display: block; margin-bottom: .35rem; color: #52525b; }
+    input, select { width: 100%; padding: .55rem .75rem; border: 1px solid #d4d4d8; border-radius: 8px; font-size: .95rem; margin-bottom: 1rem; }
+    .row { display: flex; gap: .75rem; }
+    .row select { flex: 1; }
+    button { width: 100%; padding: .65rem; background: #2563eb; color: #fff; border: none; border-radius: 8px; font-size: 1rem; font-weight: 500; cursor: pointer; }
+    button:disabled { opacity: .5; cursor: not-allowed; }
+    #status { margin-top: 1rem; padding: .75rem; border-radius: 8px; font-size: .9rem; display: none; }
+    #status.info    { background: #eff6ff; color: #1d4ed8; display: block; }
+    #status.success { background: #f0fdf4; color: #166534; display: block; }
+    #status.error   { background: #fef2f2; color: #991b1b; display: block; }
+    a#downloadLink  { display: block; margin-top: .75rem; font-weight: 500; color: #2563eb; text-decoration: underline; }
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>AES Picture Processor</h1>
+
+  <label>BMP File</label>
+  <input type="file" id="bmpFile" accept=".bmp"/>
+
+  <label>AES-256 Key (64 hex characters)</label>
+  <input type="text" id="aesKey" placeholder="e.g. 0011223344556677..." maxlength="64"/>
+
+  <div class="row">
+    <div style="flex:1">
+      <label>Operation</label>
+      <select id="operation">
+        <option value="encrypt">Encrypt</option>
+        <option value="decrypt">Decrypt</option>
+      </select>
+    </div>
+    <div style="flex:1">
+      <label>Mode</label>
+      <select id="mode">
+        <option value="CBC">CBC</option>
+        <option value="ECB">ECB</option>
+      </select>
+    </div>
+  </div>
+
+  <button id="submitBtn" onclick="submitJob()">Process</button>
+
+  <div id="status"></div>
+  <a id="downloadLink" href="#" style="display:none" target="_blank">Download result</a>
+</div>
+
+<script>
+  // ── WebSocket connection to C01 backend ──
+  const WS_URL = 'ws://' + location.host + '/ws';
+  let stompClient = null;
+
+  // Load STOMP from CDN
+  const s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/@stomp/stompjs@7/bundles/stomp.umd.min.js';
+  s.onload = connectWS;
+  document.head.appendChild(s);
+
+  function connectWS() {
+    stompClient = new StompJs.Client({ brokerURL: WS_URL });
+    stompClient.onConnect = () => {
+      stompClient.subscribe('/topic/done', frame => {
+        const { url } = JSON.parse(frame.body);
+        setStatus('success', 'Processing complete!');
+        const link = document.getElementById('downloadLink');
+        link.href = url;
+        link.textContent = 'Download ' + url.split('/').pop();
+        link.style.display = 'block';
+        document.getElementById('submitBtn').disabled = false;
+      });
+    };
+    stompClient.activate();
+  }
+
+  async function submitJob() {
+    const file = document.getElementById('bmpFile').files[0];
+    const key  = document.getElementById('aesKey').value.trim();
+
+    if (!file)              return setStatus('error', 'Please select a BMP file.');
+    if (key.length !== 64)  return setStatus('error', 'Key must be exactly 64 hex characters (256 bits).');
+
+    document.getElementById('submitBtn').disabled = true;
+    document.getElementById('downloadLink').style.display = 'none';
+    setStatus('info', 'Uploading and queuing job…');
+
+    const form = new FormData();
+    form.append('file',      file);
+    form.append('key',       key);
+    form.append('operation', document.getElementById('operation').value);
+    form.append('mode',      document.getElementById('mode').value);
+
+    try {
+      const res = await fetch('/api/process', { method: 'POST', body: form });
+      if (!res.ok) throw new Error(await res.text());
+      setStatus('info', 'Job queued. Waiting for MPI workers…');
+    } catch (e) {
+      setStatus('error', 'Upload failed: ' + e.message);
+      document.getElementById('submitBtn').disabled = false;
+    }
+  }
+
+  function setStatus(type, msg) {
+    const el = document.getElementById('status');
+    el.className = type;
+    el.textContent = msg;
+  }
+</script>
+</body>
+</html>
