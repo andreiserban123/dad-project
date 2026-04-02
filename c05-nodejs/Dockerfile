@@ -1,10 +1,7 @@
 FROM critoma/amd64_u24_noble_ism_security
 
-# Install Node.js 20 LTS
-RUN apt-get update && apt-get install -y curl && \
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && \
-    apt-get install -y nodejs && \
-    rm -rf /var/lib/apt/lists/*
+ENV NODE_HOME=/opt/software/nodejs/node-v22.21.0-linux-x64
+ENV PATH=$NODE_HOME/bin:$PATH
 
 WORKDIR /app
 

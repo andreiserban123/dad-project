@@ -1,9 +1,8 @@
 FROM critoma/amd64_u24_noble_ism_security AS native-builder
 
-# Install build tools for the C/MPI native layer
+# OpenMPI is installed at /usr/local (compiled from /opt/software/openmpi-5.0.6 source)
+# Only native build tools needed
 RUN apt-get update && apt-get install -y \
-    openmpi-bin \
-    libopenmpi-dev \
     libssl-dev \
     gcc \
     make \
@@ -17,7 +16,11 @@ RUN make
 # ── Java builder stage ──────────────────────────
 FROM critoma/amd64_u24_noble_ism_security AS java-builder
 
-RUN apt-get update && apt-get install -y openjdk-21-jdk maven && rm -rf /var/lib/apt/lists/*
+ENV JAVA_HOME=/opt/software/java/jdks/jdk-21.0.2
+ENV PATH=$JAVA_HOME/bin:$PATH
+
+# Maven is not pre-installed; JDK comes from /opt/software
+RUN apt-get update && apt-get install -y maven && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
 COPY pom.xml .
@@ -27,10 +30,11 @@ RUN mvn clean package -DskipTests -q
 # ── Runtime stage ───────────────────────────────
 FROM critoma/amd64_u24_noble_ism_security
 
+ENV JAVA_HOME=/opt/software/java/jdks/jdk-21.0.2
+ENV PATH=$JAVA_HOME/bin:$PATH
+
+# Java comes from /opt/software; OpenMPI is at /usr/local; only SSL and SSH needed from apt
 RUN apt-get update && apt-get install -y \
-    openjdk-21-jre \
-    openmpi-bin \
-    libopenmpi3 \
     libssl3 \
     openssh-client \
     openssh-server \

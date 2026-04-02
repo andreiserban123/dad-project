@@ -1,7 +1,9 @@
 FROM critoma/amd64_u24_noble_ism_security AS builder
 
+# OpenMPI is installed at /usr/local (compiled from /opt/software/openmpi-5.0.6 source)
+# Only native build tools needed
 RUN apt-get update && apt-get install -y \
-    openmpi-bin libopenmpi-dev libssl-dev gcc make \
+    libssl-dev gcc make \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -12,8 +14,9 @@ RUN make
 # ── Runtime ──────────────────────────────────────
 FROM critoma/amd64_u24_noble_ism_security
 
+# OpenMPI is at /usr/local; only SSL and SSH needed from apt
 RUN apt-get update && apt-get install -y \
-    openmpi-bin libopenmpi3 libssl3 \
+    libssl3 \
     openssh-server \
     && rm -rf /var/lib/apt/lists/*
 
