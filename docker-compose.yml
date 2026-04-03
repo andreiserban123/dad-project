@@ -61,6 +61,7 @@ services:
       context: ./c03-subscriber
       dockerfile: Dockerfile
     container_name: c03-subscriber
+    ports: []
     environment:
       RABBITMQ_HOST: c02-rabbitmq
       RABBITMQ_PORT: 5672
@@ -85,6 +86,7 @@ services:
       context: ./c04-mpi
       dockerfile: Dockerfile
     container_name: c04-mpi-worker
+    ports: []
     networks:
       - ism-net
     volumes:
