@@ -51,7 +51,7 @@ static int aes_cbc(int encrypt,
 
     const EVP_CIPHER *cipher = EVP_aes_256_cbc();
     EVP_CipherInit_ex(ctx, cipher, NULL, key, iv, encrypt);
-    EVP_CIPHER_CTX_set_padding(ctx, 1);  /* PKCS7 */
+    EVP_CIPHER_CTX_set_padding(ctx, 0);  /* no padding — rows are block-aligned */
 
     int out_len = 0, final_len = 0;
     EVP_CipherUpdate(ctx, out, &out_len, in, in_len);
@@ -102,7 +102,8 @@ int main(int argc, char *argv[]) {
 
     /* ── Rank 0: read BMP ── */
     unsigned char *full_data  = NULL;
-    unsigned char  header[BMP_HEADER_SIZE];
+    unsigned char *header     = NULL;   /* full header up to data_offset */
+    int            header_size = 0;
     int            pixel_size = 0;   /* bytes in pixel data only */
     int            width = 0, height = 0, bpp = 0, row_size = 0;
 
@@ -110,12 +111,26 @@ int main(int argc, char *argv[]) {
         FILE *f = fopen(in_path, "rb");
         if (!f) die("Cannot open input BMP");
 
-        if (fread(header, 1, BMP_HEADER_SIZE, f) != BMP_HEADER_SIZE)
-            die("Failed to read BMP header");
+        /* Read the fixed 14-byte file header first to get data_offset */
+        unsigned char fhdr[14];
+        if (fread(fhdr, 1, 14, f) != 14)
+            die("Failed to read BMP file header");
+
+        int data_offset = *(int *)(fhdr + 10);
+        header_size = data_offset;
+
+        header = (unsigned char *)malloc(header_size);
+        if (!header) die("malloc header");
+        memcpy(header, fhdr, 14);
+
+        /* Read remainder of header (DIB header + any extra) */
+        if (header_size > 14) {
+            if ((int)fread(header + 14, 1, header_size - 14, f) != header_size - 14)
+                die("Failed to read full BMP header");
+        }
 
         /* Parse BMP header fields (little-endian) */
-        int data_offset = *(int *)(header + 10);
-        width    = *(int *)(header + 18);
+        width    = *(int   *)(header + 18);
         height   = abs(*(int *)(header + 22));
         bpp      = *(short *)(header + 28);
         row_size = ((width * (bpp / 8) + 3) / 4) * 4;  /* 4-byte aligned */
@@ -124,13 +139,12 @@ int main(int argc, char *argv[]) {
         full_data = (unsigned char *)malloc(pixel_size);
         if (!full_data) die("malloc failed");
 
-        fseek(f, data_offset, SEEK_SET);
         if ((int)fread(full_data, 1, pixel_size, f) != pixel_size)
             die("Failed to read pixel data");
         fclose(f);
 
-        printf("[rank 0] BMP %dx%d bpp=%d pixel_bytes=%d\n",
-               width, height, bpp, pixel_size);
+        printf("[rank 0] BMP %dx%d bpp=%d pixel_bytes=%d header_size=%d\n",
+               width, height, bpp, pixel_size, header_size);
     }
 
     /* ── Broadcast dimensions ── */
@@ -167,12 +181,10 @@ int main(int argc, char *argv[]) {
     unsigned char *out_chunk = malloc(my_size + AES_BLOCK_SIZE);
     if (!out_chunk) die("malloc out_chunk");
 
-    /* Generate / embed IV per row for CBC; ECB needs no IV */
+    /* IV for CBC: use first 16 bytes of key so encrypt and decrypt always agree.
+     * (A random IV would need to be stored in the ciphertext to recover on decrypt.) */
     unsigned char iv[IV_SIZE];
-    if (encrypt)
-        RAND_bytes(iv, IV_SIZE);  /* random IV on encrypt */
-    else
-        memcpy(iv, my_chunk, IV_SIZE); /* first 16 bytes = IV on decrypt */
+    memcpy(iv, key, IV_SIZE);
 
     if (use_ecb) {
         /* ECB: process each 16-byte block independently — parallelisable */
@@ -211,12 +223,13 @@ int main(int argc, char *argv[]) {
     if (rank == 0) {
         FILE *out = fopen(out_path, "wb");
         if (!out) die("Cannot open output BMP");
-        fwrite(header, 1, BMP_HEADER_SIZE, out);
+        fwrite(header, 1, header_size, out);
         fwrite(result_data, 1, pixel_size, out);
         fclose(out);
         printf("[rank 0] Written to %s\n", out_path);
         free(full_data);
         free(result_data);
+        free(header);
     }
 
     free(my_chunk);

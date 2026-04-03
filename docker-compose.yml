@@ -25,6 +25,7 @@ services:
       RABBITMQ_USER: admin
       RABBITMQ_PASS: admin
       C05_BASE_URL: http://c05-nodejs:3000
+      C05_PUBLIC_URL: http://localhost:3000
     depends_on:
       c02-rabbitmq:
         condition: service_healthy

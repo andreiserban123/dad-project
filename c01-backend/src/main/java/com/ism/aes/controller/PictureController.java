@@ -55,7 +55,9 @@ public class PictureController {
 
     /** Called internally by NotificationService when C03 signals completion */
     public void notifyFrontend(long pictureId) {
-        String downloadUrl = System.getenv("C05_BASE_URL") + "/picture/" + pictureId;
+        String publicBase = System.getenv("C05_PUBLIC_URL") != null
+                ? System.getenv("C05_PUBLIC_URL") : System.getenv("C05_BASE_URL");
+        String downloadUrl = publicBase + "/picture/" + pictureId;
         ws.convertAndSend("/topic/done", Map.of("url", downloadUrl));
     }
 }

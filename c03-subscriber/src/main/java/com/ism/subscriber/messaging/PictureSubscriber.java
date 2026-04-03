@@ -56,7 +56,7 @@ public class PictureSubscriber {
 
         // ── 3. Launch MPI (Runtime.exec → native ELF64) ──
         String cmd = String.format(
-            "mpirun -np %d --host %s /opt/aes_enc %s %s %s %s %s",
+            "mpirun --allow-run-as-root -np %d --host %s /opt/aes_enc %s %s %s %s %s",
             mpiNp, mpiHosts, operation, mode, keyHex,
             inFile.toAbsolutePath(), outFile.toAbsolutePath()
         );

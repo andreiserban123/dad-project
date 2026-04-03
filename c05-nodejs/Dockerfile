@@ -9,7 +9,7 @@ WORKDIR /app
 COPY package.json .
 RUN npm install --omit=dev
 
-# Copy source
+# Copy source_
 COPY src ./src
 
 EXPOSE 3000

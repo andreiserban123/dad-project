@@ -25,6 +25,15 @@ RUN mkdir /var/run/sshd && \
     sed -i 's/#PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config && \
     sed -i 's/UsePAM yes/UsePAM no/' /etc/ssh/sshd_config
 
+# MPI SSH key pair (same key as c03 so passwordless auth works)
+COPY mpi_rsa     /root/.ssh/id_rsa
+COPY mpi_rsa.pub /root/.ssh/id_rsa.pub
+RUN mkdir -p /root/.ssh && \
+    cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys && \
+    chmod 600 /root/.ssh/id_rsa /root/.ssh/authorized_keys && \
+    chmod 700 /root/.ssh && \
+    printf 'Host *\n  StrictHostKeyChecking no\n  UserKnownHostsFile /dev/null\n' > /root/.ssh/config
+
 COPY --from=builder /build/aes_enc /opt/aes_enc
 RUN chmod +x /opt/aes_enc
 
